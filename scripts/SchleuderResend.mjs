@@ -25,9 +25,14 @@ export async function SchleuderResend() {
         emails = emails.map(sanitizeMail)
 
         for (let email in emails) {
-            resentEmails.push("x-resend: ".concat(emails[email]))
+            resentEmails.push("X-RESEND: ".concat(emails[email]))
         }
     }
+
+    if (headerLines.length == 0) {
+        resentEmails.push("X-RESEND: ")
+    }
+
     return resentEmails.join("\n")
 
     function sanitizeMail(value) {
