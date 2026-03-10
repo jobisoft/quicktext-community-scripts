@@ -3,7 +3,7 @@
   "name": "Quicktext Community Scripts",
   "short_name": "Community Scripts",
   "description": "A set of Quicktext scripts maintained by the community",
-  "version": "1.2",
+  "version": "1.3",
   "author": "Quicktext Community",
   "browser_specific_settings": {
     "gecko": {

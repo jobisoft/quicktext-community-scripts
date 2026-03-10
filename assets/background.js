@@ -17,7 +17,7 @@ browser.runtime.onConnectExternal.addListener(port => {
       if (!SCRIPTS[scriptName]) {
         return;
       }
-      let script = await import(`../scripts/${SCRIPTS[scriptName]}`)
+      let script = await import(`../scripts/${SCRIPTS[scriptName].file}`)
         .then(imported => imported[scriptName]);
 
       if (!script) {
@@ -50,16 +50,27 @@ browser.storage.onChanged.addListener(async (changes, areaName) => {
     return;
   }
   if (changes.quicktext.newValue) {
-    // Inform QT about us.
+    // Inform QT about us. Older Quicktext versions (< 6.5) expect a simple array
+    // of names. Quicktext >= 6.5 supports the new object-based extended format.
+    const qtVersion = await getQuicktextVersion();
+
     await browser.runtime.sendMessage(
-      QUICKTEXT_ID, 
-      { 
+      QUICKTEXT_ID,
+      {
         register_script_addon: browser.runtime.getManifest().short_name,
-        available_scripts: Object.keys(SCRIPTS),
+        available_scripts: (qtVersion.major < 6 || (qtVersion.major === 6 && qtVersion.minor < 5))
+          ? Object.keys(SCRIPTS)
+          : SCRIPTS
       }
     );
   }
 })
+
+async function getQuicktextVersion() {
+  let info = await browser.management.get(QUICKTEXT_ID);
+  let [major, minor] = info.version.split(".").map(x => parseInt(x, 10));
+  return { major, minor };
+}
 
 browser.management.onEnabled.addListener(info => setQuicktextState(info, true));
 browser.management.onInstalled.addListener(info => setQuicktextState(info, true));
