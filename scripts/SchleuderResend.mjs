@@ -1,12 +1,10 @@
 export async function SchleuderResend() {
-    let { relatedMessageId } = await this.compose.getComposeDetails();
-    // Instead of parsing the raw message for headers, better use getFull to get the individual parsed headers.
-    let text = await this.messages.getRaw(relatedMessageId).then(t => t.replaceAll("\r\n", "\n"));
+    let { plainTextBody } = await this.compose.getComposeDetails()
 
-    let resentLines = text.match(/Resent: .*\n/g)
-    let fromLines = text.match(/From: .*\n/g)
-    let toLines = text.match(/To: .*\n/g)
-    let ccLines = text.match(/Cc: .*\n/g)
+    let resentLines = plainTextBody.match(/Resent: (.*)\n/)
+    let fromLines = plainTextBody.match(/From: .*\n/g)
+    let toLines = plainTextBody.match(/To: .*\n/g)
+    let ccLines = plainTextBody.match(/Cc: .*\n/g)
 
     let headerLines = []
 
@@ -27,9 +25,14 @@ export async function SchleuderResend() {
         emails = emails.map(sanitizeMail)
 
         for (let email in emails) {
-            resentEmails.push("x-resend: ".concat(emails[email]))
+            resentEmails.push("X-RESEND: ".concat(emails[email]))
         }
     }
+
+    if (headerLines.length == 0) {
+        resentEmails.push("X-RESEND: ")
+    }
+
     return resentEmails.join("\n")
 
     function sanitizeMail(value) {
