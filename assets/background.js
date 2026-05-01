@@ -45,6 +45,53 @@ browser.runtime.onConnectExternal.addListener(port => {
   });
 })
 
+// Quicktext's onMessageExternal listener may not yet be installed when its
+// management.onEnabled / onInstalled events fire (its background script is
+// still booting), and runtime.sendMessage to a missing listener is silently
+// dropped. Retry with backoff until Quicktext acknowledges the registration
+// or we give up after a reasonable number of attempts.
+const ANNOUNCE_INITIAL_DELAY_MS = 250;
+const ANNOUNCE_RETRY_DELAY_MS = 500;
+const ANNOUNCE_MAX_ATTEMPTS = 20;
+let announceInFlight = false;
+
+async function announceWithRetry() {
+  if (announceInFlight) return;
+  announceInFlight = true;
+  try {
+    const qtVersion = await getQuicktextVersion();
+    const message = {
+      register_script_addon: browser.runtime.getManifest().short_name,
+      available_scripts: (qtVersion.major < 6 || (qtVersion.major === 6 && qtVersion.minor < 5))
+        ? Object.keys(SCRIPTS)
+        : SCRIPTS
+    };
+
+    for (let attempt = 1; attempt <= ANNOUNCE_MAX_ATTEMPTS; attempt++) {
+      await new Promise(r => setTimeout(
+        r, attempt === 1 ? ANNOUNCE_INITIAL_DELAY_MS : ANNOUNCE_RETRY_DELAY_MS,
+      ));
+
+      // Bail out if Quicktext was disabled while we were waiting.
+      const { quicktext } = await browser.storage.session.get({ quicktext: false });
+      if (!quicktext) return;
+
+      try {
+        const reply = await browser.runtime.sendMessage(QUICKTEXT_ID, message);
+        // Quicktext acknowledges the registration with `{ ok: true }` once its
+        // onMessageExternal listener is installed. sendMessage resolves with
+        // undefined when no listener is registered yet, so retry in that case.
+        if (reply?.ok) return;
+      } catch (e) {
+        // sendMessage may reject if Quicktext is starting up; keep retrying.
+      }
+    }
+    console.warn("[quicktext-community-scripts] register_script_addon not acknowledged after retries");
+  } finally {
+    announceInFlight = false;
+  }
+}
+
 browser.storage.onChanged.addListener(async (changes, areaName) => {
   if (areaName != "session" || !changes.quicktext) {
     return;
@@ -52,17 +99,7 @@ browser.storage.onChanged.addListener(async (changes, areaName) => {
   if (changes.quicktext.newValue) {
     // Inform QT about us. Older Quicktext versions (< 6.5) expect a simple array
     // of names. Quicktext >= 6.5 supports the new object-based extended format.
-    const qtVersion = await getQuicktextVersion();
-
-    await browser.runtime.sendMessage(
-      QUICKTEXT_ID,
-      {
-        register_script_addon: browser.runtime.getManifest().short_name,
-        available_scripts: (qtVersion.major < 6 || (qtVersion.major === 6 && qtVersion.minor < 5))
-          ? Object.keys(SCRIPTS)
-          : SCRIPTS
-      }
-    );
+    announceWithRetry();
   }
 })
 
